@@ -4,7 +4,8 @@ use forgeflow_agents::default_roles;
 use forgeflow_config::ForgeFlowPaths;
 use forgeflow_core::now;
 use forgeflow_domain::{Checkpoint, Priority, WorkItem, WorkItemType, WorkStage};
-use forgeflow_memory::WorkItemStore;
+use forgeflow_loop::LoopController;
+use forgeflow_memory::{LearningStore, WorkItemStore};
 use forgeflow_observability::{build_replay, format_event_trail, format_guidance_digest, assess_health, ExecutionMetrics};
 use forgeflow_orchestrator::{StateMachine, TransitionResult, resume as orchestrator_resume};
 use forgeflow_policy::GateResult;
@@ -56,6 +57,26 @@ enum Command {
     Repo {
         #[command(subcommand)]
         command: RepoCommand,
+    },
+    Loop {
+        #[arg(long)]
+        goal: Option<String>,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        resume: bool,
+        #[arg(long, default_value = "openai")]
+        runtime: String,
+        #[arg(long, default_value = "")]
+        model: String,
+        #[arg(long, default_value_t = 100)]
+        max_iterations: usize,
+        #[arg(long, default_value_t = 5.0)]
+        max_cost: f64,
+        #[arg(long, default_value_t = false)]
+        no_pause: bool,
+        #[arg(long, default_value_t = 3)]
+        max_stage_retries: usize,
     },
 }
 
@@ -278,6 +299,9 @@ fn main() -> Result<()> {
             RepoCommand::Pr { id, base, dry_run } => repo_pr(&paths, &store, id, &base, dry_run),
             RepoCommand::Issue { id, dry_run } => repo_issue(&store, id, dry_run),
         },
+        Command::Loop { goal, id, resume, runtime, model, max_iterations, max_cost, no_pause, max_stage_retries } => {
+            run_loop(&paths, goal, id, resume, runtime, model, max_iterations, max_cost, no_pause, max_stage_retries)
+        }
     }
 }
 
@@ -577,6 +601,103 @@ fn split_csv(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_loop(
+    paths: &ForgeFlowPaths,
+    goal: Option<String>,
+    id: Option<String>,
+    resume: bool,
+    runtime: String,
+    model: String,
+    max_iterations: usize,
+    max_cost: f64,
+    no_pause: bool,
+    max_stage_retries: usize,
+) -> Result<()> {
+    let learning_store = LearningStore::new(paths);
+
+    if resume {
+        let workitem_id = id.ok_or_else(|| anyhow::anyhow!("--id is required for --resume"))?;
+        let goal_str = goal.unwrap_or_default();
+
+        let config = forgeflow_domain::LoopConfig {
+            max_iterations,
+            max_cost_usd: max_cost,
+            max_stage_retries,
+            pause_on_critical: !no_pause,
+            goal: goal_str,
+            runtime,
+            model,
+        };
+
+        let store = WorkItemStore::new(paths.clone());
+        let mut controller = LoopController::new(store, learning_store, config)?;
+        let outcome = controller.resume(&workitem_id)?;
+        print_loop_outcome(&outcome);
+    } else {
+        let goal_str = goal.ok_or_else(|| anyhow::anyhow!("--goal is required (e.g., --goal \"我要做一个性能更好的数据库\")"))?;
+
+        let config = forgeflow_domain::LoopConfig {
+            max_iterations,
+            max_cost_usd: max_cost,
+            max_stage_retries,
+            pause_on_critical: !no_pause,
+            goal: goal_str,
+            runtime,
+            model,
+        };
+
+        let store = WorkItemStore::new(paths.clone());
+        let mut controller = LoopController::new(store, learning_store, config)?;
+        let outcome = controller.run()?;
+        print_loop_outcome(&outcome);
+    }
+
+    Ok(())
+}
+
+fn print_loop_outcome(outcome: &forgeflow_domain::LoopOutcome) {
+    match outcome {
+        forgeflow_domain::LoopOutcome::Completed { workitem_id, stages_completed, total_cost_usd } => {
+            println!("\n[loop] === 完成 ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 完成阶段: {}", stages_completed.join(" → "));
+            println!("[loop] 总成本: ${:.4}", total_cost_usd);
+        }
+        forgeflow_domain::LoopOutcome::Exhausted { workitem_id, reason } => {
+            println!("\n[loop] === 达到迭代上限 ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 原因: {reason}");
+            println!("[loop] 使用 forgeflow loop --resume --id {workitem_id} 继续");
+        }
+        forgeflow_domain::LoopOutcome::BudgetExceeded { workitem_id, cost_usd } => {
+            println!("\n[loop] === 超出预算 ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 已花费: ${:.4}", cost_usd);
+        }
+        forgeflow_domain::LoopOutcome::PausedForGuidance { workitem_id, stage, guidance_summary } => {
+            println!("\n[loop] === 暂停: Critical Guidance ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 当前阶段: {stage}");
+            println!("[loop] Guidance: {guidance_summary}");
+            println!("[loop] 处理后使用 forgeflow loop --resume --id {workitem_id} 继续");
+        }
+        forgeflow_domain::LoopOutcome::PausedForIntervention { workitem_id, stage, guidance_summary } => {
+            println!("\n[loop] === 暂停: 需要人工介入 ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 当前阶段: {stage}");
+            println!("[loop] 原因: {guidance_summary}");
+            println!("[loop] 处理后使用 forgeflow loop --resume --id {workitem_id} 继续");
+        }
+        forgeflow_domain::LoopOutcome::Stuck { workitem_id, stage, reason } => {
+            println!("\n[loop] === 卡住 ===");
+            println!("[loop] WorkItem: {workitem_id}");
+            println!("[loop] 阶段: {stage}");
+            println!("[loop] 原因: {reason}");
+        }
+    }
 }
 
 fn replay_workitem(store: &WorkItemStore, id: String) -> Result<()> {

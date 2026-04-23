@@ -284,6 +284,8 @@ checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
 name = "forgeflow-agents"
 version = "0.1.0"
 dependencies = [
+ "forgeflow-core",
+ "forgeflow-domain",
  "serde",
 ]
 
@@ -297,6 +299,7 @@ dependencies = [
  "forgeflow-config",
  "forgeflow-core",
  "forgeflow-domain",
+ "forgeflow-loop",
  "forgeflow-memory",
  "forgeflow-observability",
  "forgeflow-orchestrator",
@@ -333,6 +336,24 @@ dependencies = [
  "chrono",
  "forgeflow-core",
  "serde",
+]
+
+[[package]]
+name = "forgeflow-loop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "forgeflow-agents",
+ "forgeflow-config",
+ "forgeflow-core",
+ "forgeflow-domain",
+ "forgeflow-memory",
+ "forgeflow-orchestrator",
+ "forgeflow-policy",
+ "forgeflow-runtime",
+ "forgeflow-workflows",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

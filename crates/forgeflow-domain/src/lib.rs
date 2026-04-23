@@ -156,3 +156,119 @@ pub struct Guidance {
     pub should_intervene: bool,
     pub created_at: Timestamp,
 }
+
+// --- Prompt assembly ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssembledPrompt {
+    pub system_prompt: String,
+    pub user_message: String,
+}
+
+// --- Artifact extraction ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractedArtifact {
+    pub artifact_id: String,
+    pub artifact_type: String,
+    pub content: String,
+    pub producer: String,
+}
+
+// --- Self-learning ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Lesson {
+    pub lesson_id: String,
+    pub scope: LessonScope,
+    pub observation: String,
+    pub recommendation: String,
+    pub evidence: String,
+    pub learned_at: Timestamp,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LessonScope {
+    pub variant: MemoryScope,
+    pub stage: Option<WorkStage>,
+    pub role: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThresholdAdjustment {
+    pub rule_name: String,
+    pub parameter: String,
+    pub original_value: f64,
+    pub adjusted_value: f64,
+    pub reason: String,
+    pub adjusted_at: Timestamp,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StageDurationStats {
+    pub stage: WorkStage,
+    pub sample_count: usize,
+    pub avg_iterations: f64,
+    pub avg_cost_usd: f64,
+    pub success_rate: f64,
+}
+
+// --- Loop types ---
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoopConfig {
+    pub max_iterations: usize,
+    pub max_cost_usd: f64,
+    pub max_stage_retries: usize,
+    pub pause_on_critical: bool,
+    pub goal: String,
+    pub runtime: String,
+    pub model: String,
+}
+
+impl Default for LoopConfig {
+    fn default() -> Self {
+        Self {
+            max_iterations: 100,
+            max_cost_usd: 5.0,
+            max_stage_retries: 3,
+            pause_on_critical: true,
+            goal: String::new(),
+            runtime: "openai".to_string(),
+            model: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LoopOutcome {
+    Completed {
+        workitem_id: String,
+        stages_completed: Vec<String>,
+        total_cost_usd: f64,
+    },
+    Exhausted {
+        workitem_id: String,
+        reason: String,
+    },
+    BudgetExceeded {
+        workitem_id: String,
+        cost_usd: f64,
+    },
+    PausedForGuidance {
+        workitem_id: String,
+        stage: WorkStage,
+        guidance_summary: String,
+    },
+    PausedForIntervention {
+        workitem_id: String,
+        stage: WorkStage,
+        guidance_summary: String,
+    },
+    Stuck {
+        workitem_id: String,
+        stage: WorkStage,
+        reason: String,
+    },
+}

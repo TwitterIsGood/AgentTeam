@@ -1,6 +1,8 @@
 use forgeflow_config::ForgeFlowPaths;
 use forgeflow_core::Result;
-use forgeflow_domain::{Checkpoint, ExecutionEvent, Guidance, WorkItem};
+use forgeflow_domain::{
+    Checkpoint, ExecutionEvent, Guidance, Lesson, StageDurationStats, ThresholdAdjustment, WorkItem,
+};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -147,5 +149,114 @@ impl WorkItemStore {
         }
         guidances.sort_by_key(|g| g.created_at);
         Ok(guidances)
+    }
+
+    pub fn write_artifact_file(&self, workitem_id: &str, file_name: &str, content: &str) -> Result<PathBuf> {
+        let dir = self.workitem_dir(workitem_id).join("artifacts");
+        fs::create_dir_all(&dir)?;
+        let path = dir.join(file_name);
+        fs::write(&path, content)?;
+        Ok(path)
+    }
+
+    pub fn load_artifact_content(&self, workitem_id: &str, artifact_name: &str) -> Result<Option<String>> {
+        let dir = self.workitem_dir(workitem_id).join("artifacts");
+        if !dir.exists() {
+            return Ok(None);
+        }
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.contains(artifact_name) {
+                let content = fs::read_to_string(entry.path())?;
+                return Ok(Some(content));
+            }
+        }
+        Ok(None)
+    }
+}
+
+// --- Learning Store ---
+
+pub struct LearningStore {
+    learning_dir: PathBuf,
+}
+
+impl LearningStore {
+    pub fn new(paths: &ForgeFlowPaths) -> Self {
+        Self {
+            learning_dir: paths.repo_root.join(".forgeflow").join("learning"),
+        }
+    }
+
+    pub fn init(&self) -> Result<()> {
+        fs::create_dir_all(&self.learning_dir)?;
+        Ok(())
+    }
+
+    pub fn save_lesson(&self, lesson: &Lesson) -> Result<PathBuf> {
+        self.init()?;
+        let path = self.learning_dir.join("lessons.json");
+        let mut lessons = self.load_lessons().unwrap_or_default();
+        lessons.push(lesson.clone());
+        let json = serde_json::to_string_pretty(&lessons)?;
+        fs::write(&path, json)?;
+        Ok(path)
+    }
+
+    pub fn load_lessons(&self) -> Result<Vec<Lesson>> {
+        let path = self.learning_dir.join("lessons.json");
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let content = fs::read_to_string(&path)?;
+        let lessons: Vec<Lesson> = serde_json::from_str(&content)?;
+        Ok(lessons)
+    }
+
+    pub fn save_threshold_adjustment(&self, adj: &ThresholdAdjustment) -> Result<PathBuf> {
+        self.init()?;
+        let path = self.learning_dir.join("adjustments.json");
+        let mut adjustments = self.load_adjustments().unwrap_or_default();
+        adjustments.push(adj.clone());
+        let json = serde_json::to_string_pretty(&adjustments)?;
+        fs::write(&path, json)?;
+        Ok(path)
+    }
+
+    pub fn load_adjustments(&self) -> Result<Vec<ThresholdAdjustment>> {
+        let path = self.learning_dir.join("adjustments.json");
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let content = fs::read_to_string(&path)?;
+        let adjustments: Vec<ThresholdAdjustment> = serde_json::from_str(&content)?;
+        Ok(adjustments)
+    }
+
+    pub fn save_stage_stats(&self, stats: &StageDurationStats) -> Result<PathBuf> {
+        self.init()?;
+        let path = self.learning_dir.join("stage-stats.json");
+        let mut all_stats = self.load_stage_stats().unwrap_or_default();
+
+        if let Some(existing) = all_stats.iter_mut().find(|s| s.stage == stats.stage) {
+            *existing = stats.clone();
+        } else {
+            all_stats.push(stats.clone());
+        }
+
+        let json = serde_json::to_string_pretty(&all_stats)?;
+        fs::write(&path, json)?;
+        Ok(path)
+    }
+
+    pub fn load_stage_stats(&self) -> Result<Vec<StageDurationStats>> {
+        let path = self.learning_dir.join("stage-stats.json");
+        if !path.exists() {
+            return Ok(vec![]);
+        }
+        let content = fs::read_to_string(&path)?;
+        let stats: Vec<StageDurationStats> = serde_json::from_str(&content)?;
+        Ok(stats)
     }
 }

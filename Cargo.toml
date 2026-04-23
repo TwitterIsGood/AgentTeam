@@ -13,6 +13,7 @@ members = [
     "crates/forgeflow-observability",
     "crates/forgeflow-testkit",
     "crates/forgeflow-cli",
+    "crates/forgeflow-loop",
 ]
 resolver = "2"
 
@@ -48,3 +49,4 @@ forgeflow-repo = { path = "crates/forgeflow-repo" }
 forgeflow-policy = { path = "crates/forgeflow-policy" }
 forgeflow-observability = { path = "crates/forgeflow-observability" }
 forgeflow-testkit = { path = "crates/forgeflow-testkit" }
+forgeflow-loop = { path = "crates/forgeflow-loop" }
