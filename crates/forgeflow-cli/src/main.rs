@@ -7,7 +7,7 @@ use forgeflow_domain::{Checkpoint, Priority, WorkItem, WorkItemType, WorkStage};
 use forgeflow_memory::WorkItemStore;
 use forgeflow_orchestrator::{StateMachine, TransitionResult, resume as orchestrator_resume};
 use forgeflow_policy::GateResult;
-use forgeflow_runtime::FakeRuntime;
+use forgeflow_runtime::{FakeRuntime, OpenAIRuntime, Runtime};
 use forgeflow_workflows::{dry_run_workflow, review_stage_guidance};
 use std::collections::HashSet;
 use std::fs;
@@ -107,6 +107,10 @@ struct RunWorkflowArgs {
     id: String,
     #[arg(long, default_value_t = false)]
     dry_run: bool,
+    #[arg(long, default_value = "fake")]
+    runtime: String,
+    #[arg(long, default_value = "")]
+    model: String,
 }
 
 #[derive(Args, Debug)]
@@ -434,17 +438,64 @@ fn write_checkpoint(store: &WorkItemStore, args: CheckpointArgs) -> Result<()> {
 }
 
 fn run_workflow(store: &WorkItemStore, args: RunWorkflowArgs) -> Result<()> {
-    if !args.dry_run {
-        anyhow::bail!("only --dry-run is supported in V0");
+    let workitem = store.load_workitem(&args.id)?;
+
+    if args.dry_run {
+        let runtime = FakeRuntime;
+        let events = dry_run_workflow(&runtime, &workitem);
+        let file_name = format!("{}-dry-run.json", now().format("%Y%m%dT%H%M%SZ"));
+        let json = serde_json::to_string_pretty(&events)?;
+        let path = store.append_event_json(&workitem.id, &file_name, &json)?;
+        println!("workflow dry-run complete: {}", path.display());
+        return Ok(());
     }
 
-    let workitem = store.load_workitem(&args.id)?;
-    let runtime = FakeRuntime;
-    let events = dry_run_workflow(&runtime, &workitem);
-    let file_name = format!("{}-dry-run.json", now().format("%Y%m%dT%H%M%SZ"));
-    let json = serde_json::to_string_pretty(&events)?;
-    let path = store.append_event_json(&workitem.id, &file_name, &json)?;
-    println!("workflow dry-run complete: {}", path.display());
+    match args.runtime.as_str() {
+        "fake" => {
+            anyhow::bail!("use --dry-run with fake runtime, or specify --runtime openai");
+        }
+        "openai" => {
+            let base_url =
+                std::env::var("FORGEFLOW_OPENAI_BASE_URL").unwrap_or_else(|_| {
+                    "http://192.187.98.166:18317".to_string()
+                });
+            let api_key = std::env::var("FORGEFLOW_OPENAI_API_KEY")
+                .unwrap_or_else(|_| "sk-cliproxy-vps-token".to_string());
+            let model = if args.model.is_empty() {
+                std::env::var("FORGEFLOW_OPENAI_MODEL")
+                    .unwrap_or_else(|_| "gpt-5.4".to_string())
+            } else {
+                args.model
+            };
+
+            println!("connecting to {base_url} with model {model}...");
+            let runtime = OpenAIRuntime::new(&base_url, &api_key, &model);
+
+            let health = runtime.health_check();
+            if !health.ok {
+                anyhow::bail!("runtime health check failed: {}", health.detail);
+            }
+            println!("runtime healthy: {}", health.detail);
+
+            let events = dry_run_workflow(&runtime, &workitem);
+            let file_name = format!("{}-workflow.json", now().format("%Y%m%dT%H%M%SZ"));
+            let json = serde_json::to_string_pretty(&events)?;
+            let path = store.append_event_json(&workitem.id, &file_name, &json)?;
+
+            for event in &events {
+                println!(
+                    "[{}] {} -> {:.80}...",
+                    event.actor,
+                    event.stage,
+                    event.action.chars().take(80).collect::<String>()
+                );
+            }
+            println!("workflow complete: {}", path.display());
+        }
+        other => {
+            anyhow::bail!("unknown runtime: {other}. Use 'fake' or 'openai'");
+        }
+    }
     Ok(())
 }
 

@@ -32,6 +32,8 @@ thiserror = "2.0"
 uuid = { version = "1.18", features = ["serde", "v4"] }
 chrono = { version = "0.4", features = ["serde"] }
 jsonschema = "0.30"
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+tokio = { version = "1", features = ["full"] }
 walkdir = "2.5"
 
 forgeflow-core = { path = "crates/forgeflow-core" }
