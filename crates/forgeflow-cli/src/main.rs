@@ -5,8 +5,10 @@ use forgeflow_config::ForgeFlowPaths;
 use forgeflow_core::now;
 use forgeflow_domain::{Checkpoint, Priority, WorkItem, WorkItemType, WorkStage};
 use forgeflow_memory::WorkItemStore;
+use forgeflow_observability::{build_replay, format_event_trail, format_guidance_digest, assess_health, ExecutionMetrics};
 use forgeflow_orchestrator::{StateMachine, TransitionResult, resume as orchestrator_resume};
 use forgeflow_policy::GateResult;
+use forgeflow_repo::{GitRepo, PullRequestSpec, IssueSpec, RepoOps, workitem_branch_name, repo_status_for_workitem};
 use forgeflow_runtime::{FakeRuntime, OpenAIRuntime, Runtime};
 use forgeflow_workflows::{dry_run_workflow, review_stage_guidance};
 use std::collections::HashSet;
@@ -39,6 +41,22 @@ enum Command {
         #[command(subcommand)]
         command: WorkflowCommand,
     },
+    Replay {
+        #[arg(long)]
+        id: String,
+    },
+    Metrics {
+        #[arg(long)]
+        id: String,
+    },
+    Health {
+        #[arg(long)]
+        id: String,
+    },
+    Repo {
+        #[command(subcommand)]
+        command: RepoCommand,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -59,6 +77,29 @@ enum MemoryCommand {
 #[derive(Subcommand, Debug)]
 enum WorkflowCommand {
     Run(RunWorkflowArgs),
+}
+
+#[derive(Subcommand, Debug)]
+enum RepoCommand {
+    Status,
+    Branch {
+        #[arg(long)]
+        id: String,
+    },
+    Pr {
+        #[arg(long)]
+        id: String,
+        #[arg(long, default_value = "main")]
+        base: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
+    Issue {
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Args, Debug)]
@@ -227,6 +268,15 @@ fn main() -> Result<()> {
         },
         Command::Workflow { command } => match command {
             WorkflowCommand::Run(args) => run_workflow(&store, args),
+        },
+        Command::Replay { id } => replay_workitem(&store, id),
+        Command::Metrics { id } => metrics_workitem(&store, id),
+        Command::Health { id } => health_workitem(&store, &paths, id),
+        Command::Repo { command } => match command {
+            RepoCommand::Status => repo_status(&paths),
+            RepoCommand::Branch { id } => repo_branch(&paths, &store, id),
+            RepoCommand::Pr { id, base, dry_run } => repo_pr(&paths, &store, id, &base, dry_run),
+            RepoCommand::Issue { id, dry_run } => repo_issue(&store, id, dry_run),
         },
     }
 }
@@ -527,6 +577,199 @@ fn split_csv(value: &str) -> Vec<String> {
         .filter(|item| !item.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn replay_workitem(store: &WorkItemStore, id: String) -> Result<()> {
+    let workitem = store.load_workitem(&id)?;
+    let events = store.load_events(&id)?;
+    let guidances = store.load_guidances(&id)?;
+
+    let replay = build_replay(&workitem, &events, &guidances);
+
+    println!("=== Replay: {} ===", replay.workitem_title);
+    println!("ID: {}", replay.workitem_id);
+    println!("Current stage: {}", replay.current_stage);
+    println!("Events: {}", replay.event_count);
+    println!("Guidances: {}", replay.guidance_count);
+    println!("Failed events: {}", replay.failed_event_count);
+
+    if let Some(dur) = replay.total_duration_minutes {
+        println!("Total duration: {} min", dur);
+    }
+
+    println!("\n--- Stage Timeline ---");
+    for seg in &replay.stage_timeline {
+        let status_label = match seg.status {
+            forgeflow_observability::StageStatus::Active => "active",
+            forgeflow_observability::StageStatus::Completed => "done",
+            forgeflow_observability::StageStatus::Blocked => "blocked",
+            forgeflow_observability::StageStatus::NotStarted => "pending",
+        };
+        println!(
+            "  {} [{}] {} events{}",
+            seg.stage,
+            status_label,
+            seg.event_count,
+            seg.duration_minutes
+                .map(|d| format!(" ({} min)", d))
+                .unwrap_or_default()
+        );
+    }
+
+    println!("\n--- Actor Summary ---");
+    for actor in &replay.actor_summary {
+        println!(
+            "  {}: {} events ({} ok, {} fail)",
+            actor.actor, actor.event_count, actor.completed, actor.failed
+        );
+    }
+
+    if !events.is_empty() {
+        println!("\n--- Event Trail ---");
+        println!("{}", format_event_trail(&events));
+    }
+
+    if !guidances.is_empty() {
+        println!("\n--- Guidance Digest ---");
+        println!("{}", format_guidance_digest(&guidances));
+    }
+
+    Ok(())
+}
+
+fn metrics_workitem(store: &WorkItemStore, id: String) -> Result<()> {
+    let events = store.load_events(&id)?;
+    let metrics = ExecutionMetrics::from_events(&id, &events);
+
+    println!("=== Metrics: {} ===", metrics.workitem_id);
+    println!("Total events: {}", metrics.total_events);
+    println!("Completed: {}", metrics.completed_events);
+    println!("Failed: {}", metrics.failed_events);
+    println!("Skipped: {}", metrics.skipped_events);
+    println!("Success rate: {:.1}%", metrics.success_rate * 100.0);
+    println!("Stages touched: {}", metrics.stages_touched.join(", "));
+    println!("Actor count: {}", metrics.actor_count);
+    if let Some(dur) = metrics.estimated_duration_minutes {
+        println!("Duration: {} min", dur);
+    }
+
+    Ok(())
+}
+
+fn health_workitem(store: &WorkItemStore, paths: &ForgeFlowPaths, id: String) -> Result<()> {
+    let workitem = store.load_workitem(&id)?;
+    let events = store.load_events(&id)?;
+    let guidances = store.load_guidances(&id)?;
+
+    let health = assess_health(&workitem, &events, &guidances);
+
+    println!("=== Health: {} ===", health.workitem_id);
+    println!("Stage: {}", health.stage);
+    println!("Healthy: {}", if health.is_healthy { "yes" } else { "no" });
+
+    if !health.issues.is_empty() {
+        println!("Issues:");
+        for issue in &health.issues {
+            println!("  - {issue}");
+        }
+    }
+
+    // Also check repo status if possible
+    if let Ok(repo) = GitRepo::open(&paths.repo_root) {
+        match repo_status_for_workitem(&repo, &workitem) {
+            Ok(ws) => {
+                println!("\n--- Repo Status ---");
+                println!("Branch: {}", ws.repo_status.current_branch);
+                println!("Expected branch: {}", ws.expected_branch);
+                println!("On expected: {}", if ws.on_expected_branch { "yes" } else { "no" });
+                println!("Uncommitted changes: {}", if ws.repo_status.has_uncommitted_changes { "yes" } else { "no" });
+            }
+            Err(e) => println!("\nRepo status unavailable: {e}"),
+        }
+    }
+
+    Ok(())
+}
+
+fn repo_status(paths: &ForgeFlowPaths) -> Result<()> {
+    let repo = GitRepo::open(&paths.repo_root)?;
+    let status = repo.status_summary()?;
+
+    println!("=== Repo Status ===");
+    println!("Root: {}", status.root.display());
+    println!("Current branch: {}", status.current_branch);
+    println!("Uncommitted changes: {}", if status.has_uncommitted_changes { "yes" } else { "no" });
+    println!("Branches: {}", status.branches.join(", "));
+
+    Ok(())
+}
+
+fn repo_branch(paths: &ForgeFlowPaths, store: &WorkItemStore, id: String) -> Result<()> {
+    let workitem = store.load_workitem(&id)?;
+    let repo = GitRepo::open(&paths.repo_root)?;
+    let branch_name = workitem_branch_name(&workitem);
+
+    println!("Creating branch '{}' for workitem {}...", branch_name, workitem.id);
+    repo.create_branch(&branch_name)?;
+    println!("Created and switched to branch: {branch_name}");
+
+    Ok(())
+}
+
+fn repo_pr(paths: &ForgeFlowPaths, store: &WorkItemStore, id: String, base: &str, dry_run: bool) -> Result<()> {
+    let workitem = store.load_workitem(&id)?;
+    let spec = PullRequestSpec::from_workitem(&workitem, base);
+
+    if dry_run {
+        println!("=== PR Spec (dry run) ===");
+        println!("Title: {}", spec.title);
+        println!("Head: {}", spec.head_branch);
+        println!("Base: {}", spec.base_branch);
+        println!("Labels: {}", spec.labels.join(", "));
+        println!("\nBody:\n{}", spec.body);
+        return Ok(());
+    }
+
+    // Use gh CLI to create PR
+    let output = std::process::Command::new("gh")
+        .args([
+            "pr", "create",
+            "--title", &spec.title,
+            "--body", &spec.body,
+            "--head", &spec.head_branch,
+            "--base", &spec.base_branch,
+        ])
+        .current_dir(&paths.repo_root)
+        .output()?;
+
+    if output.status.success() {
+        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        println!("Created PR: {url}");
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("Failed to create PR: {}", stderr.trim());
+    }
+
+    Ok(())
+}
+
+fn repo_issue(store: &WorkItemStore, id: String, dry_run: bool) -> Result<()> {
+    let workitem = store.load_workitem(&id)?;
+    let spec = IssueSpec::from_workitem(&workitem);
+
+    if dry_run {
+        println!("=== Issue Spec (dry run) ===");
+        println!("Title: {}", spec.title);
+        println!("Labels: {}", spec.labels.join(", "));
+        println!("\nBody:\n{}", spec.body);
+        return Ok(());
+    }
+
+    println!("Issue creation requires gh CLI integration.");
+    println!("Title: {}", spec.title);
+    println!("Labels: {}", spec.labels.join(", "));
+
+    Ok(())
 }
 
 #[cfg(test)]

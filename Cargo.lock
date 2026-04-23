@@ -298,8 +298,10 @@ dependencies = [
  "forgeflow-core",
  "forgeflow-domain",
  "forgeflow-memory",
+ "forgeflow-observability",
  "forgeflow-orchestrator",
  "forgeflow-policy",
+ "forgeflow-repo",
  "forgeflow-runtime",
  "forgeflow-workflows",
  "serde_json",
@@ -349,7 +351,11 @@ dependencies = [
 name = "forgeflow-observability"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "forgeflow-core",
+ "forgeflow-domain",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -376,7 +382,11 @@ dependencies = [
 name = "forgeflow-repo"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "forgeflow-core",
+ "forgeflow-domain",
  "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -394,7 +404,13 @@ dependencies = [
 name = "forgeflow-testkit"
 version = "0.1.0"
 dependencies = [
+ "forgeflow-agents",
+ "forgeflow-core",
+ "forgeflow-domain",
  "forgeflow-runtime",
+ "forgeflow-workflows",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

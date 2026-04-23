@@ -18,3 +18,5 @@ forgeflow-workflows.workspace = true
 forgeflow-agents.workspace = true
 forgeflow-orchestrator.workspace = true
 forgeflow-policy.workspace = true
+forgeflow-observability.workspace = true
+forgeflow-repo.workspace = true
