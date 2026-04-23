@@ -1,0 +1,7 @@
+/target/
+/.forgeflow/
+/workitems/
+/.DS_Store
+Thumbs.db
+*.log
+*.tmp

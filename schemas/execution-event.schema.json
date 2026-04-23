@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeflow.local/schemas/execution-event.schema.json",
+  "title": "ExecutionEvent",
+  "type": "object",
+  "required": [
+    "event_id",
+    "workitem_id",
+    "stage",
+    "actor",
+    "action",
+    "timestamp",
+    "input_refs",
+    "output_refs",
+    "status"
+  ],
+  "properties": {
+    "event_id": { "type": "string", "minLength": 1 },
+    "workitem_id": { "type": "string", "minLength": 1 },
+    "stage": { "type": "string", "minLength": 1 },
+    "actor": { "type": "string", "minLength": 1 },
+    "action": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "input_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "output_refs": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "status": { "type": "string", "enum": ["started", "completed", "failed", "skipped"] }
+  },
+  "additionalProperties": false
+}

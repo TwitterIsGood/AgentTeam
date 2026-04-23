@@ -1,0 +1,48 @@
+[workspace]
+members = [
+    "crates/forgeflow-core",
+    "crates/forgeflow-domain",
+    "crates/forgeflow-config",
+    "crates/forgeflow-memory",
+    "crates/forgeflow-runtime",
+    "crates/forgeflow-agents",
+    "crates/forgeflow-orchestrator",
+    "crates/forgeflow-workflows",
+    "crates/forgeflow-repo",
+    "crates/forgeflow-policy",
+    "crates/forgeflow-observability",
+    "crates/forgeflow-testkit",
+    "crates/forgeflow-cli",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+authors = ["Biang"]
+license = "MIT"
+rust-version = "1.86"
+
+[workspace.dependencies]
+anyhow = "1.0"
+clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+uuid = { version = "1.18", features = ["serde", "v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+jsonschema = "0.30"
+walkdir = "2.5"
+
+forgeflow-core = { path = "crates/forgeflow-core" }
+forgeflow-domain = { path = "crates/forgeflow-domain" }
+forgeflow-config = { path = "crates/forgeflow-config" }
+forgeflow-memory = { path = "crates/forgeflow-memory" }
+forgeflow-runtime = { path = "crates/forgeflow-runtime" }
+forgeflow-agents = { path = "crates/forgeflow-agents" }
+forgeflow-orchestrator = { path = "crates/forgeflow-orchestrator" }
+forgeflow-workflows = { path = "crates/forgeflow-workflows" }
+forgeflow-repo = { path = "crates/forgeflow-repo" }
+forgeflow-policy = { path = "crates/forgeflow-policy" }
+forgeflow-observability = { path = "crates/forgeflow-observability" }
+forgeflow-testkit = { path = "crates/forgeflow-testkit" }

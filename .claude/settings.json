@@ -1,0 +1,32 @@
+{
+	"attribution": {
+		"commit": "",
+		"pr": ""
+	},
+	"permissions": {
+		"allow": [
+			"Bash(go build:*)",
+			"Bash(go:*)",
+			"Bash(gofmt:*)",
+			"Bash(curl:*)",
+			"Bash(bun install:*)",
+			"Bash(npm install:*)",
+			"Bash(npm run:*)",
+			"Bash(*)",
+			"Bash(rm:*)",
+			"Bash(ls:*)",
+			"Bash(npx playwright:*)",
+			"Bash(ss:*)",
+			"Bash(node:*)",
+			"Bash(taskkill:*)",
+			"Bash(PORT=3002 npx playwright:*)",
+			"Bash(powershell:*)",
+			"Bash(netsh advfirewall:*)",
+			"Bash(dir E:\\\\university\\\\biang\\\\project\\\\ai-zufang-web\\\\app:*)",
+			"Bash(PGPASSWORD='ABCabc200401.' psql:*)",
+			"Bash(tasklist:*)",
+			"Bash(ping:*)"
+		],
+		"defaultMode": "bypassPermissions"
+	}
+}

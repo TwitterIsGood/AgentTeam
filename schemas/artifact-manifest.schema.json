@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeflow.local/schemas/artifact-manifest.schema.json",
+  "title": "ArtifactManifest",
+  "type": "object",
+  "required": [
+    "artifact_id",
+    "type",
+    "producer",
+    "version",
+    "path",
+    "related_workitem",
+    "depends_on"
+  ],
+  "properties": {
+    "artifact_id": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "minLength": 1 },
+    "producer": { "type": "string", "minLength": 1 },
+    "version": { "type": "integer", "minimum": 1 },
+    "path": { "type": "string", "minLength": 1 },
+    "related_workitem": { "type": "string", "minLength": 1 },
+    "depends_on": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

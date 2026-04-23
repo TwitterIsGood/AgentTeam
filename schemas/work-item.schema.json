@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeflow.local/schemas/work-item.schema.json",
+  "title": "WorkItem",
+  "type": "object",
+  "required": [
+    "id",
+    "title",
+    "type",
+    "priority",
+    "repo",
+    "stage",
+    "owner",
+    "linked_issue",
+    "linked_branch",
+    "artifacts",
+    "checkpoints"
+  ],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "enum": ["feature", "bugfix", "review", "release", "chore"] },
+    "priority": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+    "repo": { "type": "string", "minLength": 1 },
+    "stage": { "type": "string", "enum": ["Intake", "Roundtable", "Architecture", "Implement", "Test", "Review", "PR", "Release"] },
+    "owner": { "type": ["string", "null"] },
+    "linked_issue": { "type": ["string", "null"] },
+    "linked_branch": { "type": ["string", "null"] },
+    "artifacts": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "checkpoints": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

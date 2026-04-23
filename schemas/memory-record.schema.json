@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://forgeflow.local/schemas/memory-record.schema.json",
+  "title": "MemoryRecord",
+  "type": "object",
+  "required": [
+    "memory_id",
+    "scope",
+    "summary",
+    "source",
+    "updated_at",
+    "relevance"
+  ],
+  "properties": {
+    "memory_id": { "type": "string", "minLength": 1 },
+    "scope": { "type": "string", "enum": ["project", "workitem", "repo"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "source": { "type": "string", "minLength": 1 },
+    "updated_at": { "type": "string", "format": "date-time" },
+    "relevance": { "type": "string", "enum": ["low", "medium", "high"] }
+  },
+  "additionalProperties": false
+}
