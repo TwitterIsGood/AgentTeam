@@ -152,57 +152,76 @@ impl Runtime for OpenAIRuntime {
             max_tokens: 2048,
         };
 
-        let client = reqwest::blocking::Client::new();
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .build()
+            .unwrap_or_default();
+
         let url = format!("{}/v1/chat/completions", self.base_url);
 
-        let result = client
-            .post(&url)
-            .header("Authorization", format!("Bearer {}", self.api_key))
-            .header("Content-Type", "application/json")
-            .json(&chat_req)
-            .send();
+        // Retry up to 3 times with increasing backoff
+        let mut last_error = String::new();
+        for attempt in 0..3 {
+            let result = client
+                .post(&url)
+                .header("Authorization", format!("Bearer {}", self.api_key))
+                .header("Content-Type", "application/json")
+                .json(&chat_req)
+                .send();
 
-        match result {
-            Ok(resp) => {
-                let latency_ms = start.elapsed().as_millis() as u64;
+            match result {
+                Ok(resp) => {
+                    let latency_ms = start.elapsed().as_millis() as u64;
 
-                match resp.json::<ChatResponse>() {
-                    Ok(chat_resp) => {
-                        let output = chat_resp
-                            .choices
-                            .first()
-                            .map(|c| c.message.content.clone())
-                            .unwrap_or_default();
+                    match resp.json::<ChatResponse>() {
+                        Ok(chat_resp) => {
+                            let output = chat_resp
+                                .choices
+                                .first()
+                                .map(|c| c.message.content.clone())
+                                .unwrap_or_default();
 
-                        let tokens = chat_resp
-                            .usage
-                            .map(|u| u.completion_tokens)
-                            .unwrap_or(0);
+                            let tokens = chat_resp
+                                .usage
+                                .map(|u| u.completion_tokens)
+                                .unwrap_or(0);
 
-                        ExecutionResponse {
-                            actor: request.actor,
-                            output,
-                            tokens,
-                            latency_ms,
-                            estimated_cost_usd: 0.0,
+                            return ExecutionResponse {
+                                actor: request.actor,
+                                output,
+                                tokens,
+                                latency_ms,
+                                estimated_cost_usd: 0.0,
+                            };
+                        }
+                        Err(e) => {
+                            return ExecutionResponse {
+                                actor: request.actor,
+                                output: format!("error parsing response: {e}"),
+                                tokens: 0,
+                                latency_ms,
+                                estimated_cost_usd: 0.0,
+                            };
                         }
                     }
-                    Err(e) => ExecutionResponse {
-                        actor: request.actor,
-                        output: format!("error parsing response: {e}"),
-                        tokens: 0,
-                        latency_ms,
-                        estimated_cost_usd: 0.0,
-                    },
+                }
+                Err(e) => {
+                    last_error = format!("{e}");
+                    if attempt < 2 {
+                        let wait = std::time::Duration::from_secs(2u64.pow(attempt as u32 + 1));
+                        std::thread::sleep(wait);
+                    }
                 }
             }
-            Err(e) => ExecutionResponse {
-                actor: request.actor,
-                output: format!("error calling LLM: {e}"),
-                tokens: 0,
-                latency_ms: start.elapsed().as_millis() as u64,
-                estimated_cost_usd: 0.0,
-            },
+        }
+
+        ExecutionResponse {
+            actor: request.actor,
+            output: format!("error calling LLM after 3 retries: {last_error}"),
+            tokens: 0,
+            latency_ms: start.elapsed().as_millis() as u64,
+            estimated_cost_usd: 0.0,
         }
     }
 
